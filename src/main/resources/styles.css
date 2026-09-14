@@ -1,0 +1,70 @@
+/* Таблица стилей ИС «Электронная таблица» */
+
+.root {
+    -fx-font-family: "Segoe UI", "Arial", sans-serif;
+    -fx-font-size: 13px;
+}
+
+/* Окно входа */
+.login-title {
+    -fx-font-size: 18px;
+    -fx-font-weight: bold;
+}
+
+.message-label.error {
+    -fx-text-fill: #C62828;
+}
+
+.message-label.success {
+    -fx-text-fill: #2E7D32;
+}
+
+/* Строка формул */
+.formula-bar .cell-address {
+    -fx-min-width: 64px;
+    -fx-alignment: center;
+    -fx-font-weight: bold;
+    -fx-border-color: #DADCE0;
+    -fx-padding: 3 6 3 6;
+}
+
+/* Таблица */
+.table-view .column-header .label {
+    -fx-font-weight: bold;
+    -fx-text-fill: #5F6368;
+}
+
+.table-view .table-cell.spreadsheet-cell {
+    -fx-padding: 0 4 0 4;
+    -fx-border-color: transparent #E0E0E0 #E0E0E0 transparent;
+    -fx-border-width: 0 1 1 0;
+}
+
+.table-view .table-cell.spreadsheet-cell:selected {
+    -fx-border-color: #1A73E8;
+    -fx-border-width: 2;
+}
+
+.table-view .table-cell.spreadsheet-cell .cell-editor {
+    -fx-padding: 0 2 0 2;
+    -fx-background-radius: 0;
+}
+
+.table-view .table-cell.row-header {
+    -fx-background-color: #F1F3F4;
+    -fx-text-fill: #5F6368;
+    -fx-alignment: center;
+    -fx-font-weight: bold;
+}
+
+/* Строка состояния */
+.status-bar {
+    -fx-spacing: 28;
+    -fx-padding: 4 10 4 10;
+    -fx-background-color: #F1F3F4;
+    -fx-border-color: #DADCE0 transparent transparent transparent;
+}
+
+#statusModified {
+    -fx-text-fill: #B26A00;
+}
