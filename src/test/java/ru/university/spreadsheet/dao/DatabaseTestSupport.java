@@ -9,21 +9,21 @@ import ru.university.spreadsheet.model.Role;
 import ru.university.spreadsheet.model.User;
 
 /**
- * Базовый класс тестов слоя DAO: перед каждым тестом создаёт пустую базу данных
- * во временном каталоге и выполняет миграцию схемы.
+ * Базовый класс тестов, работающих с базой данных: перед каждым тестом создаёт пустую
+ * базу данных во временном каталоге и выполняет миграцию схемы.
  */
-abstract class DatabaseTestSupport {
+public abstract class DatabaseTestSupport {
 
     @TempDir
-    Path tempDir;
+    protected Path tempDir;
 
-    Database database;
-    UserDao userDao;
-    DocumentDao documentDao;
-    CellDao cellDao;
+    protected Database database;
+    protected UserDao userDao;
+    protected DocumentDao documentDao;
+    protected CellDao cellDao;
 
     @BeforeEach
-    void setUpDatabase() {
+    protected void setUpDatabase() {
         System.setProperty(Database.DB_PATH_PROPERTY, tempDir.resolve("test.db").toString());
         database = Database.getInstance();
         database.close();
@@ -34,12 +34,12 @@ abstract class DatabaseTestSupport {
     }
 
     @AfterEach
-    void tearDownDatabase() {
+    protected void tearDownDatabase() {
         database.close();
         System.clearProperty(Database.DB_PATH_PROPERTY);
     }
 
-    User saveUser(String login, Role role) {
+    protected User saveUser(String login, Role role) {
         return userDao.save(new User(0, login, "hash-" + login, "salt-" + login, role));
     }
 }
