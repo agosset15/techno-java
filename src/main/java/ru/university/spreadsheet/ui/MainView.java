@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Predicate;
 
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
@@ -17,6 +18,7 @@ import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Dialog;
@@ -50,7 +52,9 @@ import ru.university.spreadsheet.model.CellStyle;
 import ru.university.spreadsheet.model.Document;
 import ru.university.spreadsheet.service.AuthService;
 import ru.university.spreadsheet.service.DocumentService;
+import ru.university.spreadsheet.service.PrintService;
 import ru.university.spreadsheet.service.StyleService;
+import ru.university.spreadsheet.service.UserManagementService;
 
 /**
  * Главное окно приложения: меню, строка формул, таблица и строка состояния.
@@ -100,6 +104,7 @@ public class MainView {
     private final Label statusUser = new Label();
     private final List<MenuItem> documentItems = new ArrayList<>();
     private final StyleToolbar styleToolbar;
+    private final UserManagementService userManagementService;
 
     /**
      * Создаёт главное окно.
@@ -108,13 +113,17 @@ public class MainView {
      * @param documentService сервис документов
      * @param authService     сервис аутентификации
      * @param styleService    сервис оформления ячеек
+     * @param printService    сервис печати
+     * @param userManagementService сервис управления пользователями
      * @param onLogout        действие при выходе из учётной записи
      */
     public MainView(Stage stage, DocumentService documentService, AuthService authService,
-                    StyleService styleService, Runnable onLogout) {
+                    StyleService styleService, PrintService printService,
+                    UserManagementService userManagementService, Runnable onLogout) {
         this.stage = Objects.requireNonNull(stage, "stage");
         this.onLogout = Objects.requireNonNull(onLogout, "onLogout");
-        this.controller = new SpreadsheetController(this, documentService, authService);
+        this.userManagementService = Objects.requireNonNull(userManagementService, "userManagementService");
+        this.controller = new SpreadsheetController(this, documentService, authService, printService);
         this.styleToolbar = new StyleToolbar(controller, styleService);
 
         buildTable();
@@ -235,7 +244,7 @@ public class MainView {
      * @param documents документы для выбора
      * @return выбранный документ или пустой {@link Optional} при отмене
      */
-    public Optional<Document> chooseDocument(List<Document> documents) {
+    public Optional<Document> chooseDocument(List<Document> documents, Predicate<Document> onDelete) {
         Dialog<Document> dialog = new Dialog<>();
         dialog.initOwner(stage);
         dialog.setTitle("Открыть документ");
@@ -243,7 +252,8 @@ public class MainView {
         ButtonType openType = new ButtonType("Открыть", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(openType, cancelButtonType());
 
-        TableView<Document> list = new TableView<>(FXCollections.observableArrayList(documents));
+        ObservableList<Document> items = FXCollections.observableArrayList(documents);
+        TableView<Document> list = new TableView<>(items);
         list.setPlaceholder(new Label("Документов нет"));
         list.setPrefSize(440, 300);
         list.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
@@ -272,7 +282,16 @@ public class MainView {
 
         dialog.getDialogPane().lookupButton(openType).disableProperty()
                 .bind(list.getSelectionModel().selectedItemProperty().isNull());
-        dialog.getDialogPane().setContent(list);
+        Button deleteButton = new Button("Удалить");
+        deleteButton.setId("deleteDocumentButton");
+        deleteButton.disableProperty().bind(list.getSelectionModel().selectedItemProperty().isNull());
+        deleteButton.setOnAction(event -> {
+            Document selected = list.getSelectionModel().getSelectedItem();
+            if (selected != null && confirmDeleteDocument(selected) && onDelete.test(selected)) {
+                items.remove(selected);
+            }
+        });
+        dialog.getDialogPane().setContent(new VBox(8, list, deleteButton));
         dialog.setResultConverter(button -> button == openType ? list.getSelectionModel().getSelectedItem() : null);
         return dialog.showAndWait();
     }
@@ -344,7 +363,7 @@ public class MainView {
         MenuItem openItem = menuItem("Открыть…", "Shortcut+O", controller::onOpen);
         MenuItem saveItem = menuItem("Сохранить", "Shortcut+S", controller::onSave);
         MenuItem saveAsItem = menuItem("Сохранить как…", "Shortcut+Shift+S",
-                () -> showNotImplemented("Сохранить как", 7));
+                controller::onSaveAs);
         MenuItem printItem = menuItem("Печать…", "Shortcut+P", controller::onPrint);
         MenuItem exitItem = menuItem("Выход", null, this::onExit);
         documentItems.addAll(List.of(saveItem, saveAsItem, printItem));
@@ -357,12 +376,22 @@ public class MainView {
         Menu editMenu = new Menu("Правка", null, copyStyleItem, pasteStyleItem);
 
         Menu adminMenu = new Menu("Администрирование", null,
-                menuItem("Пользователи…", null, () -> showNotImplemented("Управление пользователями", 7)));
+                menuItem("Пользователи…", null, this::openUserManagement));
         adminMenu.setId("adminMenu");
         adminMenu.setDisable(!controller.isAdmin());
 
         Menu helpMenu = new Menu("Справка", null, menuItem("О программе", null, this::showAbout));
         return new MenuBar(fileMenu, editMenu, adminMenu, helpMenu);
+    }
+
+    private boolean confirmDeleteDocument(Document doc) {
+        ButtonType yes = new ButtonType("Удалить", ButtonBar.ButtonData.YES);
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION, "", yes, cancelButtonType());
+        alert.initOwner(stage);
+        alert.setTitle("Удаление документа");
+        alert.setHeaderText("Удалить документ «" + doc.getName() + "»?");
+        alert.setContentText("Восстановить удалённый документ будет нельзя.");
+        return alert.showAndWait().filter(yes::equals).isPresent();
     }
 
     private static ButtonType cancelButtonType() {
@@ -536,6 +565,31 @@ public class MainView {
         }
         table.edit(ref.row(), dataColumns.get(ref.col()));
         table.getProperties().remove(SpreadsheetTableCell.INITIAL_INPUT_KEY);
+    }
+
+    /**
+     * Возвращает узел, который выводится на печать.
+     *
+     * @return таблица документа
+     */
+    public Node getPrintableNode() {
+        return table;
+    }
+
+    /**
+     * Очищает окно после удаления открытого документа.
+     */
+    public void showEmpty() {
+        table.setItems(FXCollections.observableArrayList());
+        table.setDisable(true);
+        formulaField.setDisable(true);
+        formulaField.clear();
+        addressLabel.setText("");
+        updateStatus();
+    }
+
+    private void openUserManagement() {
+        new UserManagementView(stage, userManagementService).show();
     }
 
     private void onExit() {

@@ -106,4 +106,15 @@ class DocumentDaoTest extends DatabaseTestSupport {
 
         assertThat(documentDao.findById(doc.getId())).isEmpty();
     }
+
+    @Test
+    @DisplayName("findAll возвращает документы всех владельцев")
+    void findAll() {
+        User stranger = saveUser("stranger", Role.USER);
+        Document mine = documentDao.save(new Document(0, "Мой", owner.getId(), CREATED, CREATED));
+        Document foreign = documentDao.save(new Document(0, "Чужой", stranger.getId(), CREATED, CREATED.plusDays(1)));
+
+        assertThat(documentDao.findAll()).extracting(Document::getId)
+                .containsExactly(foreign.getId(), mine.getId());
+    }
 }

@@ -12,6 +12,7 @@ import ru.university.spreadsheet.model.Document;
 import ru.university.spreadsheet.model.User;
 import ru.university.spreadsheet.service.AuthService;
 import ru.university.spreadsheet.service.DocumentService;
+import ru.university.spreadsheet.service.PrintService;
 import ru.university.spreadsheet.service.ServiceException;
 
 /**
@@ -29,6 +30,7 @@ public class SpreadsheetController {
     private final MainView view;
     private final DocumentService documentService;
     private final AuthService authService;
+    private final PrintService printService;
     private Document currentDoc;
     private CellRange selection;
     private CellRef activeCell;
@@ -39,11 +41,14 @@ public class SpreadsheetController {
      * @param view            главное окно
      * @param documentService сервис документов
      * @param authService     сервис аутентификации
+     * @param printService    сервис печати
      */
-    public SpreadsheetController(MainView view, DocumentService documentService, AuthService authService) {
+    public SpreadsheetController(MainView view, DocumentService documentService, AuthService authService,
+                                 PrintService printService) {
         this.view = Objects.requireNonNull(view, "view");
         this.documentService = Objects.requireNonNull(documentService, "documentService");
         this.authService = Objects.requireNonNull(authService, "authService");
+        this.printService = Objects.requireNonNull(printService, "printService");
     }
 
     /**
@@ -169,13 +174,35 @@ public class SpreadsheetController {
     }
 
     /**
-     * Печатает открытый документ.
+     * Печатает открытый документ: показывает диалог выбора принтера и отправляет
+     * таблицу на печать.
      */
     public void onPrint() {
         if (currentDoc == null) {
             return;
         }
-        view.showNotImplemented("Печать", 7);
+        try {
+            if (printService.print(view.getPrintableNode())) {
+                view.showInfo("Документ отправлен на печать");
+            }
+        } catch (RuntimeException e) {
+            handleError("Не удалось напечатать документ", e);
+        }
+    }
+
+    /**
+     * Сохраняет открытый документ под новым именем и продолжает работу с копией.
+     */
+    public void onSaveAs() {
+        if (currentDoc == null) {
+            return;
+        }
+        Optional<String> name = view.askDocumentName("Сохранить как");
+        if (name.isEmpty()) {
+            return;
+        }
+        runSafely("Не удалось сохранить документ",
+                () -> display(documentService.saveAs(currentDoc, name.get())));
     }
 
     /**
@@ -199,12 +226,12 @@ public class SpreadsheetController {
         }
         List<Document> documents;
         try {
-            documents = documentService.listByOwner(user.get().getId());
+            documents = documentService.listAvailable();
         } catch (RuntimeException e) {
             handleError("Не удалось загрузить список документов", e);
             return;
         }
-        Optional<Document> chosen = view.chooseDocument(documents);
+        Optional<Document> chosen = view.chooseDocument(documents, this::deleteDocument);
         if (chosen.isEmpty() || !confirmCloseDocument()) {
             return;
         }
@@ -252,6 +279,29 @@ public class SpreadsheetController {
         } else {
             LOG.log(Level.SEVERE, context, e);
             view.showError(context + ": " + e.getMessage());
+        }
+    }
+
+    /**
+     * Удаляет документ по запросу из диалога открытия. Если удалён открытый документ,
+     * окно очищается.
+     *
+     * @param doc удаляемый документ
+     * @return true, если документ удалён
+     */
+    private boolean deleteDocument(Document doc) {
+        try {
+            documentService.delete(doc.getId());
+            if (currentDoc != null && currentDoc.getId() == doc.getId()) {
+                currentDoc = null;
+                selection = null;
+                activeCell = null;
+                view.showEmpty();
+            }
+            return true;
+        } catch (RuntimeException e) {
+            handleError("Не удалось удалить документ", e);
+            return false;
         }
     }
 }

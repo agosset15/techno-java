@@ -332,4 +332,58 @@ public class DocumentService {
             LOG.log(Level.WARNING, "Не удалось восстановить режим автоподтверждения", e);
         }
     }
+
+    /**
+     * Возвращает документы, доступные текущему пользователю: свои — обычному
+     * пользователю, все — администратору.
+     *
+     * @return список документов, начиная с последних изменённых
+     * @throws AuthException если вход не выполнен
+     */
+    public List<Document> listAvailable() {
+        User user = requireUser();
+        return user.getRole() == Role.ADMIN ? documentDao.findAll() : documentDao.findByOwner(user.getId());
+    }
+
+    /**
+     * Удаляет документ вместе с его ячейками.
+     *
+     * @param id идентификатор документа
+     * @throws AuthException    если вход не выполнен или документ принадлежит другому пользователю
+     * @throws ServiceException если документ не найден
+     */
+    public void delete(int id) {
+        User user = requireUser();
+        Document doc = documentDao.findById(id)
+                .orElseThrow(() -> new ServiceException("Документ не найден: id=" + id));
+        requireAccess(user, doc.getOwnerId());
+        documentDao.delete(id);
+        LOG.info(() -> "Удалён документ " + doc.getName() + " (id=" + id + ")");
+    }
+
+    /**
+     * Сохраняет содержимое документа под новым именем.
+     * <p>
+     * Создаётся новый документ с текущим пользователем в качестве владельца, в него
+     * копируются непустые ячейки исходного документа, после чего копия сохраняется.
+     * Исходный документ не изменяется; граф зависимостей перестраивается для копии,
+     * которая становится текущей для сервиса.
+     *
+     * @param doc  исходный документ
+     * @param name имя нового документа
+     * @return сохранённая копия документа
+     * @throws AuthException    если вход не выполнен
+     * @throws ServiceException если имя пустое
+     */
+    public Document saveAs(Document doc, String name) {
+        Objects.requireNonNull(doc, "doc");
+        Document copy = create(name);
+        for (Cell cell : doc.getNonEmptyCells()) {
+            copy.setCell(cell.getRef(), new Cell(cell.getRef(), cell.getRaw(), cell.getStyle()));
+        }
+        recalculateAll(copy);
+        copy.setModified(true);
+        save(copy);
+        return copy;
+    }
 }

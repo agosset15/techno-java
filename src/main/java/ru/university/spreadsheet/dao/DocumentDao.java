@@ -28,6 +28,8 @@ public class DocumentDao {
     private static final String SQL_FIND_BY_OWNER =
             "SELECT id, name, owner_id, created_at, updated_at FROM documents "
                     + "WHERE owner_id = ? ORDER BY updated_at DESC, id DESC";
+    private static final String SQL_FIND_ALL =
+            "SELECT id, name, owner_id, created_at, updated_at FROM documents ORDER BY updated_at DESC, id DESC";
     private static final String SQL_INSERT =
             "INSERT INTO documents (name, owner_id, created_at, updated_at) VALUES (?, ?, ?, ?)";
     private static final String SQL_UPDATE =
@@ -178,5 +180,25 @@ public class DocumentDao {
 
     private Connection connection() {
         return database.getConnection();
+    }
+
+    /**
+     * Возвращает все документы, начиная с последних изменённых. Используется
+     * администратором, которому доступны документы всех пользователей.
+     *
+     * @return список документов; пустой, если документов нет
+     * @throws DataAccessException при ошибке базы данных
+     */
+    public List<Document> findAll() {
+        try (PreparedStatement statement = connection().prepareStatement(SQL_FIND_ALL);
+             ResultSet rs = statement.executeQuery()) {
+            List<Document> documents = new ArrayList<>();
+            while (rs.next()) {
+                documents.add(mapRow(rs));
+            }
+            return documents;
+        } catch (SQLException e) {
+            throw new DataAccessException("Ошибка чтения списка документов", e);
+        }
     }
 }
