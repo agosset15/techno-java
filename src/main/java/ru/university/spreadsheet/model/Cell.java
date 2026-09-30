@@ -207,6 +207,9 @@ public class Cell {
     }
 
     private static String formatValue(Object value) {
+        if (value instanceof Boolean flag) {
+            return flag ? "TRUE" : "FALSE";
+        }
         if (value instanceof Double number && Double.isFinite(number)) {
             if (number == Math.rint(number) && Math.abs(number) < MAX_EXACT_INTEGER) {
                 return Long.toString(number.longValue());

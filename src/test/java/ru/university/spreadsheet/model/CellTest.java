@@ -66,4 +66,16 @@ class CellTest {
         assertThat(new Cell(A1, "x").isEmpty()).isFalse();
         assertThat(new Cell(A1, "", new CellStyle(Color.YELLOW, Color.BLACK, false)).isEmpty()).isFalse();
     }
+
+    @Test
+    @DisplayName("логическое значение выводится как TRUE или FALSE")
+    void formatsBoolean() {
+        Cell cell = new Cell(A1, "=1<2");
+
+        cell.setCachedValue(Boolean.TRUE);
+        assertThat(cell.getDisplayValue()).isEqualTo("TRUE");
+
+        cell.setCachedValue(Boolean.FALSE);
+        assertThat(cell.getDisplayValue()).isEqualTo("FALSE");
+    }
 }
