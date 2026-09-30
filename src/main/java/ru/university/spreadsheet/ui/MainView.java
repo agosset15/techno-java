@@ -46,9 +46,11 @@ import javafx.stage.Stage;
 import ru.university.spreadsheet.model.Cell;
 import ru.university.spreadsheet.model.CellRange;
 import ru.university.spreadsheet.model.CellRef;
+import ru.university.spreadsheet.model.CellStyle;
 import ru.university.spreadsheet.model.Document;
 import ru.university.spreadsheet.service.AuthService;
 import ru.university.spreadsheet.service.DocumentService;
+import ru.university.spreadsheet.service.StyleService;
 
 /**
  * Главное окно приложения: меню, строка формул, таблица и строка состояния.
@@ -97,6 +99,7 @@ public class MainView {
     private final Label statusModified = new Label();
     private final Label statusUser = new Label();
     private final List<MenuItem> documentItems = new ArrayList<>();
+    private final StyleToolbar styleToolbar;
 
     /**
      * Создаёт главное окно.
@@ -104,17 +107,20 @@ public class MainView {
      * @param stage           окно JavaFX
      * @param documentService сервис документов
      * @param authService     сервис аутентификации
+     * @param styleService    сервис оформления ячеек
      * @param onLogout        действие при выходе из учётной записи
      */
-    public MainView(Stage stage, DocumentService documentService, AuthService authService, Runnable onLogout) {
+    public MainView(Stage stage, DocumentService documentService, AuthService authService,
+                    StyleService styleService, Runnable onLogout) {
         this.stage = Objects.requireNonNull(stage, "stage");
         this.onLogout = Objects.requireNonNull(onLogout, "onLogout");
         this.controller = new SpreadsheetController(this, documentService, authService);
+        this.styleToolbar = new StyleToolbar(controller, styleService);
 
         buildTable();
         buildFormulaBar();
         BorderPane root = new BorderPane();
-        root.setTop(new VBox(buildMenu(), toolbar));
+        root.setTop(new VBox(buildMenu(), styleToolbar.getNode(), toolbar));
         root.setCenter(table);
         root.setBottom(buildStatusBar());
 
@@ -199,6 +205,7 @@ public class MainView {
         statusModified.setText(doc.map(d -> d.isModified() ? "● изменён" : "сохранён").orElse(""));
         statusUser.setText("Пользователь: " + controller.getCurrentUserLabel());
         documentItems.forEach(item -> item.setDisable(doc.isEmpty()));
+        styleToolbar.getNode().setDisable(doc.isEmpty());
         stage.setTitle(doc.map(d -> d.getName() + (d.isModified() ? " *" : "") + " — ").orElse("") + APP_TITLE);
     }
 
@@ -300,6 +307,24 @@ public class MainView {
      *
      * @param message текст сообщения
      */
+    /**
+     * Показывает на панели стилей оформление активной ячейки, не применяя его.
+     *
+     * @param style стиль активной ячейки
+     */
+    public void updateStyleToolbar(CellStyle style) {
+        styleToolbar.showStyle(style);
+    }
+
+    /**
+     * Показывает информационное сообщение.
+     *
+     * @param message текст сообщения
+     */
+    public void showInfo(String message) {
+        UiSupport.showInfo(stage, "Сообщение", message);
+    }
+
     public void showError(String message) {
         UiSupport.showError(stage, message);
     }
@@ -326,9 +351,10 @@ public class MainView {
         Menu fileMenu = new Menu("Файл", null, newItem, openItem, new SeparatorMenuItem(),
                 saveItem, saveAsItem, new SeparatorMenuItem(), printItem, new SeparatorMenuItem(), exitItem);
 
-        MenuItem copyStyleItem = menuItem("Копировать стиль", null, () -> showNotImplemented("Копировать стиль", 6));
-        documentItems.add(copyStyleItem);
-        Menu editMenu = new Menu("Правка", null, copyStyleItem);
+        MenuItem copyStyleItem = menuItem("Копировать стиль", "Shortcut+Shift+C", styleToolbar::onCopyStyle);
+        MenuItem pasteStyleItem = menuItem("Вставить стиль", "Shortcut+Shift+V", styleToolbar::onPasteStyle);
+        documentItems.addAll(List.of(copyStyleItem, pasteStyleItem));
+        Menu editMenu = new Menu("Правка", null, copyStyleItem, pasteStyleItem);
 
         Menu adminMenu = new Menu("Администрирование", null,
                 menuItem("Пользователи…", null, () -> showNotImplemented("Управление пользователями", 7)));
@@ -358,8 +384,8 @@ public class MainView {
         formulaField.setPromptText("Значение или формула, начинающаяся с «=»");
         formulaField.setDisable(true);
         HBox.setHgrow(formulaField, Priority.ALWAYS);
-        formulaField.setOnAction(event -> controller.getSelection().ifPresent(range -> {
-            controller.onCellEdit(range.from(), formulaField.getText());
+        formulaField.setOnAction(event -> controller.getActiveCell().ifPresent(ref -> {
+            controller.onCellEdit(ref, formulaField.getText());
             table.requestFocus();
         }));
         formulaField.setOnKeyPressed(event -> {
@@ -389,7 +415,7 @@ public class MainView {
         table.setDisable(true);
         table.setPlaceholder(new Label("Создайте или откройте документ в меню «Файл»"));
         table.getSelectionModel().setCellSelectionEnabled(true);
-        table.getSelectionModel().setSelectionMode(SelectionMode.SINGLE);
+        table.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
 
         TableColumn<ObservableList<Cell>, Number> rowHeader = new TableColumn<>("");
         rowHeader.setCellValueFactory(
@@ -432,22 +458,47 @@ public class MainView {
         column.setPrefWidth(width);
     }
 
+    /**
+     * Приводит выделенные ячейки таблицы к прямоугольному диапазону и передаёт его
+     * контроллеру вместе с активной (сфокусированной) ячейкой.
+     */
     private void onTableSelectionChanged() {
         ObservableList<TablePosition> positions = table.getSelectionModel().getSelectedCells();
         if (positions.isEmpty()) {
             return;
         }
-        TablePosition<?, ?> position = positions.get(positions.size() - 1);
-        if (position.getRow() < 0) {
+        int minRow = Integer.MAX_VALUE;
+        int minCol = Integer.MAX_VALUE;
+        int maxRow = -1;
+        int maxCol = -1;
+        for (TablePosition<?, ?> position : positions) {
+            if (position.getRow() < 0 || !(position.getTableColumn().getUserData() instanceof Integer col)) {
+                continue;
+            }
+            minRow = Math.min(minRow, position.getRow());
+            maxRow = Math.max(maxRow, position.getRow());
+            minCol = Math.min(minCol, col);
+            maxCol = Math.max(maxCol, col);
+        }
+        if (maxRow < 0) {
+            // Выделены только номера строк: переносим выделение на первый столбец.
+            int row = positions.get(0).getRow();
+            if (row >= 0) {
+                Platform.runLater(() -> table.getSelectionModel().clearAndSelect(row, dataColumns.get(0)));
+            }
             return;
         }
-        if (!(position.getTableColumn().getUserData() instanceof Integer col)) {
-            // Щелчок по номеру строки выделяет первую ячейку этой строки.
-            int row = position.getRow();
-            Platform.runLater(() -> table.getSelectionModel().clearAndSelect(row, dataColumns.get(0)));
-            return;
+        focusedRef().ifPresent(controller::onSelect);
+        controller.onSelectRange(new CellRange(new CellRef(minRow, minCol), new CellRef(maxRow, maxCol)));
+    }
+
+    private Optional<CellRef> focusedRef() {
+        TablePosition<ObservableList<Cell>, ?> focused = table.getFocusModel().getFocusedCell();
+        if (focused == null || focused.getRow() < 0 || focused.getTableColumn() == null
+                || !(focused.getTableColumn().getUserData() instanceof Integer col)) {
+            return Optional.empty();
         }
-        controller.onSelect(new CellRef(position.getRow(), col));
+        return Optional.of(new CellRef(focused.getRow(), col));
     }
 
     private void onTableKeyTyped(KeyEvent event) {
@@ -456,8 +507,8 @@ public class MainView {
                 || event.isControlDown() || event.isAltDown() || event.isMetaDown()) {
             return;
         }
-        controller.getSelection().ifPresent(range -> {
-            startEditing(range.from(), typed);
+        controller.getActiveCell().ifPresent(ref -> {
+            startEditing(ref, typed);
             event.consume();
         });
     }
@@ -466,7 +517,7 @@ public class MainView {
         if (table.getEditingCell() != null) {
             return;
         }
-        Optional<CellRef> selected = controller.getSelection().map(CellRange::from);
+        Optional<CellRef> selected = controller.getActiveCell();
         if (selected.isEmpty()) {
             return;
         }

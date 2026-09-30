@@ -70,4 +70,34 @@ public record CellStyle(Color bg, Color fg, boolean bold) {
     private static int toChannel(double component) {
         return (int) Math.round(component * MAX_CHANNEL);
     }
+
+    /**
+     * Возвращает копию стиля с другим цветом фона.
+     *
+     * @param newBg новый цвет фона
+     * @return новый стиль
+     */
+    public CellStyle withBg(Color newBg) {
+        return new CellStyle(newBg, fg, bold);
+    }
+
+    /**
+     * Возвращает копию стиля с другим цветом текста.
+     *
+     * @param newFg новый цвет текста
+     * @return новый стиль
+     */
+    public CellStyle withFg(Color newFg) {
+        return new CellStyle(bg, newFg, bold);
+    }
+
+    /**
+     * Возвращает копию стиля с другим начертанием.
+     *
+     * @param newBold признак полужирного начертания
+     * @return новый стиль
+     */
+    public CellStyle withBold(boolean newBold) {
+        return new CellStyle(bg, fg, newBold);
+    }
 }

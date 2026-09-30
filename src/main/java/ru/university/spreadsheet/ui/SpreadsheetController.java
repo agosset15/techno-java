@@ -18,8 +18,9 @@ import ru.university.spreadsheet.service.ServiceException;
  * Контроллер главного окна: принимает действия пользователя от {@link MainView},
  * передаёт их сервисам и обновляет представление.
  * <p>
- * Хранит открытый документ и текущее выделение. Бизнес-логики не содержит — все
- * изменения документа выполняются через {@link DocumentService}.
+ * Хранит открытый документ, выделенный диапазон и активную ячейку выделения —
+ * ту, содержимое которой показано в строке формул и которая редактируется с клавиатуры.
+ * Бизнес-логики не содержит: изменения документа выполняются через {@link DocumentService}.
  */
 public class SpreadsheetController {
 
@@ -30,6 +31,7 @@ public class SpreadsheetController {
     private final AuthService authService;
     private Document currentDoc;
     private CellRange selection;
+    private CellRef activeCell;
 
     /**
      * Создаёт контроллер.
@@ -60,6 +62,15 @@ public class SpreadsheetController {
      */
     public Optional<CellRange> getSelection() {
         return Optional.ofNullable(selection);
+    }
+
+    /**
+     * Возвращает активную ячейку выделения.
+     *
+     * @return адрес активной ячейки или пустой {@link Optional}, если выделения нет
+     */
+    public Optional<CellRef> getActiveCell() {
+        return Optional.ofNullable(activeCell);
     }
 
     /**
@@ -94,23 +105,25 @@ public class SpreadsheetController {
         }
         runSafely("Не удалось изменить ячейку", () -> documentService.setCellValue(currentDoc, ref, value));
         view.refreshTable();
-        if (selection != null && selection.from().equals(ref)) {
+        if (ref.equals(activeCell)) {
             view.showFormula(ref, currentDoc.getCell(ref).getRaw());
         }
         view.updateStatus();
     }
 
     /**
-     * Обрабатывает выбор одиночной ячейки.
+     * Обрабатывает выбор одиночной ячейки: она становится и выделением, и активной ячейкой.
      *
      * @param ref адрес выбранной ячейки
      */
     public void onSelect(CellRef ref) {
+        activeCell = Objects.requireNonNull(ref, "ref");
         onSelectRange(CellRange.of(ref));
     }
 
     /**
-     * Обрабатывает выделение диапазона ячеек.
+     * Обрабатывает выделение диапазона ячеек. Активная ячейка сохраняется, если входит
+     * в новый диапазон, иначе ею становится верхний левый угол.
      *
      * @param range выделенный диапазон
      */
@@ -118,9 +131,30 @@ public class SpreadsheetController {
         if (currentDoc == null) {
             return;
         }
-        selection = range;
-        view.showFormula(range.from(), currentDoc.getCell(range.from()).getRaw());
+        selection = Objects.requireNonNull(range, "range");
+        if (activeCell == null || !range.contains(activeCell)) {
+            activeCell = range.from();
+        }
+        view.showFormula(activeCell, currentDoc.getCell(activeCell).getRaw());
+        view.updateStyleToolbar(currentDoc.getCell(activeCell).getStyle());
         view.updateStatus();
+    }
+
+    /**
+     * Обновляет представление после изменения стиля ячеек.
+     */
+    public void onStyleApplied() {
+        view.refreshTable();
+        view.updateStatus();
+    }
+
+    /**
+     * Показывает пользователю информационное сообщение.
+     *
+     * @param message текст сообщения
+     */
+    public void showMessage(String message) {
+        view.showInfo(message);
     }
 
     /**
@@ -200,6 +234,7 @@ public class SpreadsheetController {
     private void display(Document doc) {
         currentDoc = doc;
         selection = null;
+        activeCell = null;
         view.show(doc);
     }
 

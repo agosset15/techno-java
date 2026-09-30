@@ -10,6 +10,7 @@ import javafx.stage.Stage;
 import ru.university.spreadsheet.dao.Database;
 import ru.university.spreadsheet.service.AuthService;
 import ru.university.spreadsheet.service.DocumentService;
+import ru.university.spreadsheet.service.StyleService;
 import ru.university.spreadsheet.ui.LoginView;
 import ru.university.spreadsheet.ui.MainView;
 
@@ -27,6 +28,7 @@ public class App extends Application {
     private Stage loginStage;
     private AuthService authService;
     private DocumentService documentService;
+    private StyleService styleService;
 
     /**
      * Запускает приложение: миграция БД и показ окна входа.
@@ -48,6 +50,7 @@ public class App extends Application {
         loginStage = stage;
         authService = new AuthService();
         documentService = new DocumentService(authService);
+        styleService = new StyleService();
         stage.setOnCloseRequest(event -> Database.getInstance().close());
         showLogin();
     }
@@ -75,7 +78,7 @@ public class App extends Application {
 
     private void showMain() {
         Stage mainStage = new Stage();
-        MainView mainView = new MainView(mainStage, documentService, authService, () -> {
+        MainView mainView = new MainView(mainStage, documentService, authService, styleService, () -> {
             authService.logout();
             showLogin();
             mainStage.close();
